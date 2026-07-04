@@ -56,3 +56,71 @@ async def test_login_failure_raises_dsm_error():
     with pytest.raises(DSMError) as exc:
         await client._login()
     assert exc.value.code == 400
+
+
+async def test_request_logs_in_lazily_and_adds_sid():
+    def handler(request):
+        path = request.url.path
+        if path.endswith("query.cgi"):
+            return httpx.Response(200, json=API_INFO)
+        if path.endswith("auth.cgi"):
+            return httpx.Response(200, json={"success": True, "data": {"sid": "SID123"}})
+        assert path == "/webapi/entry.cgi"
+        assert request.url.params["_sid"] == "SID123"
+        assert request.url.params["api"] == "SYNO.Core.System"
+        assert request.url.params["version"] == "3"  # maxVersion from discovery
+        assert request.url.params["method"] == "info"
+        return httpx.Response(200, json={"success": True, "data": {"model": "RS1221+"}})
+
+    client = make_client(handler)
+    data = await client.request("SYNO.Core.System", "info")
+    assert data["model"] == "RS1221+"
+
+
+async def test_session_expiry_triggers_one_relogin_and_retry():
+    sids = iter(["SID1", "SID2"])
+
+    def handler(request):
+        path = request.url.path
+        if path.endswith("query.cgi"):
+            return httpx.Response(200, json=API_INFO)
+        if path.endswith("auth.cgi"):
+            return httpx.Response(200, json={"success": True, "data": {"sid": next(sids)}})
+        if request.url.params["_sid"] == "SID1":
+            return httpx.Response(200, json={"success": False, "error": {"code": 119}})
+        return httpx.Response(200, json={"success": True, "data": {"ok": True}})
+
+    client = make_client(handler)
+    data = await client.request("SYNO.Core.System", "info")
+    assert data == {"ok": True}
+
+
+async def test_non_session_dsm_error_raises():
+    def handler(request):
+        path = request.url.path
+        if path.endswith("query.cgi"):
+            return httpx.Response(200, json=API_INFO)
+        if path.endswith("auth.cgi"):
+            return httpx.Response(200, json={"success": True, "data": {"sid": "S"}})
+        # 105 = insufficient privilege - must surface, NOT retry
+        return httpx.Response(200, json={"success": False, "error": {"code": 105}})
+
+    client = make_client(handler)
+    with pytest.raises(DSMError) as exc:
+        await client.request("SYNO.Core.System", "info")
+    assert exc.value.code == 105
+
+
+async def test_unknown_api_raises_code_minus_one():
+    def handler(request):
+        path = request.url.path
+        if path.endswith("query.cgi"):
+            return httpx.Response(200, json=API_INFO)
+        if path.endswith("auth.cgi"):
+            return httpx.Response(200, json={"success": True, "data": {"sid": "S"}})
+        raise AssertionError("should not reach the API call")
+
+    client = make_client(handler)
+    with pytest.raises(DSMError) as exc:
+        await client.request("SYNO.Nope.Missing", "list")
+    assert exc.value.code == -1

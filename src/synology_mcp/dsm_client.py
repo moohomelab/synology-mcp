@@ -97,3 +97,29 @@ class DSMClient:
         )
         self._sid = data["sid"]
         logger.info("Logged in to DSM as %s", self._username)
+
+    async def request(self, api: str, method: str, **params) -> dict:
+        """Call a DSM API method; handles login, discovery, and session expiry."""
+        async with self._lock:
+            if self._sid is None:
+                await self._login()
+            info = await self._discover()
+            if api not in info:
+                raise DSMError(-1, api)
+            spec = info[api]
+            call_params = {
+                "api": api,
+                "version": str(spec["maxVersion"]),
+                "method": method,
+                "_sid": self._sid,
+                **params,
+            }
+            try:
+                return await self._call(spec["path"], call_params)
+            except DSMError as err:
+                if err.code not in SESSION_EXPIRED_CODES:
+                    raise
+                logger.info("DSM session expired (code %s) - re-authenticating", err.code)
+                await self._login()
+                call_params["_sid"] = self._sid
+                return await self._call(spec["path"], call_params)
