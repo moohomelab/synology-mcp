@@ -63,6 +63,30 @@ async def get_resource_usage() -> str:
     return await _tool_call("SYNO.Core.System.Utilization", "get", shape=shape)
 
 
+@mcp.tool()
+async def get_storage_status() -> str:
+    """Volumes and storage pools: RAID status/level, capacity used and free."""
+
+    def shape(data: dict) -> dict:
+        return {
+            "volumes": data.get("volumes", []),
+            "storage_pools": data.get("storagePools", []),
+        }
+
+    return await _tool_call("SYNO.Storage.CGI.Storage", "load_info", shape=shape)
+
+
+@mcp.tool()
+async def get_disk_health() -> str:
+    """Per-disk health: SMART status, temperature, model, serial, size."""
+    keep = ("id", "model", "serial", "temp", "smart_status", "status", "size_total")
+
+    def shape(data: dict) -> dict:
+        return {"disks": [{k: d.get(k) for k in keep} for d in data.get("disks", [])]}
+
+    return await _tool_call("SYNO.Storage.CGI.Storage", "load_info", shape=shape)
+
+
 def main():
     """Main entry point for the MCP server."""
     transport = os.getenv("MCP_TRANSPORT", "stdio")

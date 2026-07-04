@@ -56,3 +56,34 @@ async def test_tool_reports_nas_unreachable(monkeypatch):
     monkeypatch.setattr(server, "_client", fake)
     out = await server.get_system_health()
     assert out.startswith("Error: NAS unreachable")
+
+
+STORAGE_DATA = {
+    "volumes": [{"id": "volume_1", "status": "normal", "size": {"total": "10", "used": "5"}}],
+    "storagePools": [{"id": "reuse_1", "status": "normal", "raidType": "raid_5"}],
+    "disks": [
+        {
+            "id": "sata1", "model": "WD80EFAX", "serial": "X", "temp": 38,
+            "smart_status": "normal", "status": "normal", "size_total": "8001563222016",
+            "firm": "ignored-field",
+        }
+    ],
+}
+
+
+async def test_get_storage_status(monkeypatch):
+    fake = FakeClient({("SYNO.Storage.CGI.Storage", "load_info"): STORAGE_DATA})
+    monkeypatch.setattr(server, "_client", fake)
+    out = json.loads(await server.get_storage_status())
+    assert out["volumes"][0]["status"] == "normal"
+    assert out["storage_pools"][0]["raidType"] == "raid_5"
+    assert "disks" not in out
+
+
+async def test_get_disk_health_trims_fields(monkeypatch):
+    fake = FakeClient({("SYNO.Storage.CGI.Storage", "load_info"): STORAGE_DATA})
+    monkeypatch.setattr(server, "_client", fake)
+    out = json.loads(await server.get_disk_health())
+    disk = out["disks"][0]
+    assert disk["smart_status"] == "normal"
+    assert "firm" not in disk
