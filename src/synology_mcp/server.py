@@ -87,6 +87,38 @@ async def get_disk_health() -> str:
     return await _tool_call("SYNO.Storage.CGI.Storage", "load_info", shape=shape)
 
 
+@mcp.tool()
+async def list_shares() -> str:
+    """Shared folders with per-share space usage."""
+    return await _tool_call("SYNO.Core.Share", "list", additional='["size_info"]')
+
+
+@mcp.tool()
+async def list_snapshots(share_name: str = "") -> str:
+    """Snapshot inventory. Pass a share name, or leave empty for all shares."""
+    try:
+        client = get_client()
+        if share_name:
+            names = [share_name]
+        else:
+            shares = await client.request("SYNO.Core.Share", "list")
+            names = [s["name"] for s in shares.get("shares", [])]
+        result: dict = {}
+        for name in names:
+            try:
+                snaps = await client.request("SYNO.Core.Share.Snapshot", "list", name=name)
+                result[name] = snaps.get("snapshots", [])
+            except DSMError as err:
+                # Non-Btrfs shares reject the snapshot API - report, don't fail
+                result[name] = f"unavailable (DSM error {err.code})"
+        return json.dumps(result, indent=2)
+    except DSMError as err:
+        return f"Error: {err}"
+    except Exception as err:
+        logger.exception("Snapshot listing failed")
+        return f"Error: NAS unreachable or unexpected failure: {err}"
+
+
 def main():
     """Main entry point for the MCP server."""
     transport = os.getenv("MCP_TRANSPORT", "stdio")

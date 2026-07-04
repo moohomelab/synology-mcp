@@ -87,3 +87,40 @@ async def test_get_disk_health_trims_fields(monkeypatch):
     disk = out["disks"][0]
     assert disk["smart_status"] == "normal"
     assert "firm" not in disk
+
+
+async def test_list_shares(monkeypatch):
+    fake = FakeClient({
+        ("SYNO.Core.Share", "list"): {
+            "shares": [{"name": "media", "vol_path": "/volume1"}],
+            "total": 1,
+        }
+    })
+    monkeypatch.setattr(server, "_client", fake)
+    out = json.loads(await server.list_shares())
+    assert out["shares"][0]["name"] == "media"
+    # size info must be requested from DSM
+    assert fake.calls[0][2].get("additional") == '["size_info"]'
+
+
+async def test_list_snapshots_iterates_all_shares(monkeypatch):
+    from synology_mcp.dsm_client import DSMError
+
+    fake = FakeClient({
+        ("SYNO.Core.Share", "list"): {"shares": [{"name": "media"}, {"name": "docker"}]},
+        ("SYNO.Core.Share.Snapshot", "list"): {"snapshots": [{"time": "GMT-2026.07.01"}]},
+    })
+    monkeypatch.setattr(server, "_client", fake)
+    out = json.loads(await server.list_snapshots())
+    assert set(out.keys()) == {"media", "docker"}
+
+
+async def test_list_snapshots_single_share(monkeypatch):
+    fake = FakeClient({
+        ("SYNO.Core.Share.Snapshot", "list"): {"snapshots": []},
+    })
+    monkeypatch.setattr(server, "_client", fake)
+    out = json.loads(await server.list_snapshots(share_name="media"))
+    assert out == {"media": []}
+    # must NOT have called SYNO.Core.Share list
+    assert all(call[0] != "SYNO.Core.Share" for call in fake.calls)
