@@ -124,3 +124,20 @@ async def test_list_snapshots_single_share(monkeypatch):
     assert out == {"media": []}
     # must NOT have called SYNO.Core.Share list
     assert all(call[0] != "SYNO.Core.Share" for call in fake.calls)
+
+
+async def test_list_snapshots_records_per_share_error(monkeypatch):
+    from synology_mcp.dsm_client import DSMError
+
+    class PartialFailClient:
+        async def request(self, api, method, **params):
+            if api == "SYNO.Core.Share":
+                return {"shares": [{"name": "media"}, {"name": "docker"}]}
+            if params.get("name") == "docker":
+                raise DSMError(3300, "SYNO.Core.Share.Snapshot")
+            return {"snapshots": [{"time": "GMT-2026.07.01"}]}
+
+    monkeypatch.setattr(server, "_client", PartialFailClient())
+    out = json.loads(await server.list_snapshots())
+    assert out["media"] == [{"time": "GMT-2026.07.01"}]
+    assert out["docker"] == "unavailable (DSM error 3300)"
