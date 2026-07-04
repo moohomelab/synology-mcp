@@ -141,3 +141,26 @@ async def test_list_snapshots_records_per_share_error(monkeypatch):
     out = json.loads(await server.list_snapshots())
     assert out["media"] == [{"time": "GMT-2026.07.01"}]
     assert out["docker"] == "unavailable (DSM error 3300)"
+
+
+async def test_get_iscsi_status_combines_luns_and_targets(monkeypatch):
+    fake = FakeClient({
+        ("SYNO.Core.ISCSI.LUN", "list"): {"luns": [{"name": "k8s-pvc", "status": "normal"}]},
+        ("SYNO.Core.ISCSI.Target", "list"): {"targets": [{"name": "target-1", "status": "online"}]},
+    })
+    monkeypatch.setattr(server, "_client", fake)
+    out = json.loads(await server.get_iscsi_status())
+    assert out["luns"][0]["name"] == "k8s-pvc"
+    assert out["targets"][0]["status"] == "online"
+
+
+async def test_list_packages(monkeypatch):
+    fake = FakeClient({
+        ("SYNO.Core.Package", "list"): {
+            "packages": [{"id": "SynologyDrive", "version": "3.5", "additional": {"status": "stop"}}]
+        }
+    })
+    monkeypatch.setattr(server, "_client", fake)
+    out = json.loads(await server.list_packages())
+    assert out["packages"][0]["id"] == "SynologyDrive"
+    assert fake.calls[0][2].get("additional") == '["status"]'

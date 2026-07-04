@@ -119,6 +119,30 @@ async def list_snapshots(share_name: str = "") -> str:
         return f"Error: NAS unreachable or unexpected failure: {err}"
 
 
+@mcp.tool()
+async def get_iscsi_status() -> str:
+    """iSCSI LUNs and targets with status - what the cluster CSI storage rides on."""
+    try:
+        client = get_client()
+        luns = await client.request("SYNO.Core.ISCSI.LUN", "list")
+        targets = await client.request("SYNO.Core.ISCSI.Target", "list")
+        return json.dumps(
+            {"luns": luns.get("luns", []), "targets": targets.get("targets", [])},
+            indent=2,
+        )
+    except DSMError as err:
+        return f"Error: {err}"
+    except Exception as err:
+        logger.exception("iSCSI status failed")
+        return f"Error: NAS unreachable or unexpected failure: {err}"
+
+
+@mcp.tool()
+async def list_packages() -> str:
+    """Installed DSM packages with version and running/stopped status."""
+    return await _tool_call("SYNO.Core.Package", "list", additional='["status"]')
+
+
 def main():
     """Main entry point for the MCP server."""
     transport = os.getenv("MCP_TRANSPORT", "stdio")
