@@ -164,3 +164,12 @@ async def test_list_packages(monkeypatch):
     out = json.loads(await server.list_packages())
     assert out["packages"][0]["id"] == "SynologyDrive"
     assert fake.calls[0][2].get("additional") == '["status"]'
+
+
+def test_tool_surface_is_exactly_the_eight_readonly_tools():
+    tools = {t.name for t in server.mcp._tool_manager.list_tools()}
+    assert tools == {
+        "get_system_health", "get_resource_usage", "get_storage_status",
+        "get_disk_health", "list_shares", "list_snapshots",
+        "get_iscsi_status", "list_packages",
+    }
