@@ -124,3 +124,21 @@ async def test_unknown_api_raises_code_minus_one():
     with pytest.raises(DSMError) as exc:
         await client.request("SYNO.Nope.Missing", "list")
     assert exc.value.code == -1
+
+
+async def test_write_method_rejected_without_any_http_call():
+    def handler(request):
+        raise AssertionError(f"should not make any HTTP call, got: {request.url}")
+
+    client = make_client(handler)
+    with pytest.raises(ValueError):
+        await client.request("SYNO.Core.Package", "start")
+
+
+async def test_reserved_param_override_rejected():
+    def handler(request):
+        raise AssertionError(f"should not make any HTTP call, got: {request.url}")
+
+    client = make_client(handler)
+    with pytest.raises(ValueError):
+        await client.request("SYNO.Core.System", "info", version="1")

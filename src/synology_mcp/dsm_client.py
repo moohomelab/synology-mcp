@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 # 106 = session timeout, 107 = session interrupted (duplicate login), 119 = invalid sid.
 SESSION_EXPIRED_CODES = {106, 107, 119}
 
+# The complete set of DSM methods this read-only server may call.
+# DSM mutations go through the same GET mechanism (method=create/delete/...),
+# so this allowlist — not convention — is what makes the server read-only.
+READ_METHODS = {"info", "get", "load_info", "list", "query"}
+
 
 class DSMError(Exception):
     """A DSM API call returned success=false (code -1 = API not on this NAS)."""
@@ -100,6 +105,11 @@ class DSMClient:
 
     async def request(self, api: str, method: str, **params) -> dict:
         """Call a DSM API method; handles login, discovery, and session expiry."""
+        if method not in READ_METHODS:
+            raise ValueError(f"read-only client: method '{method}' not allowed")
+        for reserved in ("api", "version", "_sid"):
+            if reserved in params:
+                raise ValueError(f"reserved parameter '{reserved}' may not be overridden")
         async with self._lock:
             if self._sid is None:
                 await self._login()
