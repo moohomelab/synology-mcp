@@ -5,7 +5,7 @@ description = "Read-only Synology DSM MCP server - NAS health, storage, shares, 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "mcp>=1.2.1",
+    "mcp>=1.2.1,<2",   # v1 API: server.py imports mcp.server.fastmcp, gone in mcp 2.x
     "httpx>=0.25.0",
     "python-dotenv>=1.0.0",
 ]
